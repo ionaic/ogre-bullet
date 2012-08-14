@@ -1,0 +1,135 @@
+vertex_program Hatching_Vert cg 
+{ 
+	source Hatching.cg 
+
+	default_params 
+	{ 
+		param_named_auto eyePosition camera_position_object_space
+		param_named_auto worldviewproj worldviewproj_matrix
+	} 
+
+	entry_point Hatching_Vert 
+	profiles vs_1_1 arbvp1 
+} 
+ 
+fragment_program Hatching_Frag cg 
+{ 
+	source Hatching.cg 
+
+	default_params 
+	{
+		// diffuse components of the lighting
+		param_named_auto lightPositionArr light_position_array 4
+		param_named_auto lightDiffuseArr light_diffuse_colour_array 4
+		param_named_auto lightSpecularArr light_specular_colour_array 4
+		//VERY high value, to produce large highlights
+		param_named exponent float 127
+		// ambient term of the lighting
+		param_named_auto ambient ambient_light_colour 0
+	} 
+
+	entry_point Hatching_Frag
+	profiles ps_2_0 arbfp1
+}
+
+vertex_program outlines_vert cg
+{
+	source Hatching.cg
+	default_params
+	{
+		param_named_auto worldMatrix world_matrix
+		param_named_auto viewProjMatrix viewproj_matrix
+	}
+	entry_point outlines_Vert
+	profiles vs_2_0 arbvp1
+}
+
+fragment_program outlines_frag cg
+{
+	source Hatching.cg
+	entry_point outlines_Frag
+	profiles ps_2_0 arbfp1
+}
+
+material Hatching 
+{ 
+	technique 
+	{
+		pass 
+		{ 
+			vertex_program_ref Hatching_Vert
+			{ 
+			} 
+
+			fragment_program_ref Hatching_Frag
+			{ 
+			} 
+			texture_unit
+			{
+				texture GreenSkin.jpg 2d
+				filtering anisotropic
+				max_anisotropy 4
+			}
+			texture_unit
+			{
+				texture TAM0.dds
+				filtering anisotropic
+				max_anisotropy 4
+			}
+			texture_unit
+			{
+				texture TAM1.dds 2d
+				filtering anisotropic
+				max_anisotropy 4
+			}
+			texture_unit
+			{
+				texture TAM2.dds 2d
+				filtering anisotropic
+				max_anisotropy 4
+			}
+			texture_unit
+			{
+				texture TAM3.dds 2d
+				filtering anisotropic
+				max_anisotropy 4
+			}
+			texture_unit
+			{
+				texture TAM4.dds 2d
+				filtering anisotropic
+				max_anisotropy 4
+			}
+			texture_unit
+			{
+				texture TAM5.dds 2d
+				filtering anisotropic
+				max_anisotropy 4
+			}
+		}
+		pass
+		{
+			cull_hardware anticlockwise
+			vertex_program_ref outlines_vert
+			{
+			}
+			fragment_program_ref outlines_frag
+			{
+			}
+		} 
+	} 
+ }
+ 
+vertex_program Ambient cg
+{
+	source Hatching.cg
+
+	default_params
+	{
+		param_named_auto worldViewProj worldviewproj_matrix
+		param_named ambient float4 0.2 0.2 0.2 1.0
+	}
+
+	entry_point Ambient_vp
+	profiles vs_1_1 arbvp1
+}

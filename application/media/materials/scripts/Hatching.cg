@@ -1,0 +1,267 @@
+// vertex shader for the outline generation
+void outlines_Vert(	float4 position : POSITION,
+			out float4 oPosition : POSITION,
+			float3 normal : NORMAL,
+			uniform float4x4 worldMatrix,
+			uniform float4x4 viewProjMatrix,
+			out float3 oNormal : TEXCOORD0)
+{
+	// get the position in world space
+	oPosition = mul(worldMatrix,position);
+	// offset by .2 * the normal
+	oNormal = .2*normalize(mul(worldMatrix,float4(normal,1)).xyz);
+	oPosition.xyz += oNormal;
+	// output the posiution in screen space
+	oPosition = mul(viewProjMatrix,oPosition);
+}
+// color it a flat color
+void outlines_Frag(out float4 color) {
+	color = float4(1,0,0,1);
+}
+// convert an RGB color to HSL
+float3 RGBtoHSL(float3 color) {
+	// min and max color values mainly used for the Chroma
+	float m = min(color.r,min(color.g,color.b));
+	float M = max(color.r,max(color.g,color.b));
+	// lightness is easy
+	float Lightness = .5*(M+m);
+	float Chroma = (M-m);
+	float Hue;
+	// 3 caeses for the color. Hue is a piecewise function
+	if (M==color.r) {
+		Hue = mod(((color.g-color.b)/Chroma),6);
+	} else if (M==color.g) {
+		Hue = ((color.b-color.r)/Chroma)+2;
+	} else {
+		Hue = ((color.r-color.g)/Chroma)+4;
+	}
+	// get the saturation and emit the color
+	float Saturation = (Chroma / (1-abs(2*Lightness-1)));
+	return float3(Hue,Saturation,Lightness);
+}
+// Convert an HSL color to RGB
+float3 HSLtoRGB(float3 color) {
+	float3 converted_color;
+	// undo the saturation equation to get chroma
+	float Chroma = (1-abs(2*color.b-1))*color.g;
+	float X = Chroma * (1 - abs(mod(color.x , 2) - 1));
+	float m;
+	// Undo the Hue piecewise function
+	if (color.r < 3) {
+		if (color.r < 2) {
+			if (color.r < 1) { //0 <= H < 1
+				converted_color = float3(Chroma, X, 0);
+			} else { // 1 <= H < 2
+				converted_color = float3(X, Chroma, 0);
+			}
+		} else { // 2 <= H < 3
+			converted_color = float3(0, Chroma, X);
+		}
+	} else {
+		if (color.r < 4) { // 3 <= H' < 4
+			converted_color = float3(0, X, Chroma);
+		} else {
+			if (color.r < 5) { // 4 <= H < 5
+				converted_color = float3(X, 0, Chroma);
+			} else { // 5 <= H < 6
+				converted_color = float3(Chroma, 0, X);
+			}
+		}
+	}
+	// make it the appropriate lightness
+	m = color.b - 0.5 * Chroma;
+	return converted_color + m;
+}
+
+// expands a packed float from the 0 - 1 range to the -1 - 1 range
+float3 expand(float3 v)
+{
+	return (v - 0.5) * 2;
+}
+// simple vertex shader used in ambient lighting. deprecated
+void Ambient_vp(
+         float4 position : POSITION,
+ 
+           out float4 oPosition : POSITION,
+           out float4 colour    : COLOR,
+ 
+           uniform float4x4 worldViewProj,
+           uniform float4 ambient)
+{
+	oPosition = mul(worldViewProj, position);
+	colour = ambient;
+}
+// vertex shader for hatching
+void Hatching_Vert(
+			//ADDED BY EUGEN - support for texture with the per pixel lighting
+			float2 uv : TEXCOORD0,
+			float4 position : POSITION, 
+			float3 normal   : NORMAL,
+			//vert shader input
+			uniform float3 eyePosition,
+			//both in object space
+
+			uniform float4x4 worldviewproj, 
+
+			out float4 oClipPos    : POSITION,
+			//pass to clipping
+
+			out float4 oPos    : TEXCOORD0,
+			out float3 oNorm    : TEXCOORD1,
+			out float3 oEyePos    : TEXCOORD3,
+			//ADDED BY EUGEN - support for texture with the per pixel lighting
+			out float2 oUv       : TEXCOORD4
+			//pass to frag shader
+			) 
+{ 
+	// the only real piece of calculation
+	oClipPos = mul(worldviewproj, position); 
+	// pass values through to the more complex fragment shader
+	oPos = position;
+	oNorm = normal; 
+	oEyePos = eyePosition;
+	//ADDED BY EUGEN - support for texture with the per pixel lighting
+	oUv = uv;
+ } 
+
+ float2 blendTAMs(float low, float high, float point) {
+	float vHigh = (high - point) / (high - low);
+	float vLow = 1 - vHigh;
+	return float2(vLow, vHigh);
+ }
+ // fragment shader for hatched shading
+ void Hatching_Frag(
+	float4 pos         : TEXCOORD0,
+	float3 normal        : TEXCOORD1, 
+	float3 eyepos        : TEXCOORD3,
+	//ADDED BY EUGEN - support for texture with the per pixel lighting
+	float2 uv        : TEXCOORD4,
+	//uniform float4 ightPosition,
+	//uniform float4 lightDiffuse,
+	//uniform float4 lightSpecular,
+	uniform float exponent,
+	uniform float4 lightPositionArr[4],
+	uniform float4 lightDiffuseArr[4],
+	uniform float4 lightSpecularArr[4],
+
+	uniform float4 ambient,
+	uniform sampler2D colorMap,
+	uniform sampler2D texture0,
+	uniform sampler2D texture1,
+	uniform sampler2D texture2,
+	uniform sampler2D texture3,
+	uniform sampler2D texture4,
+	uniform sampler2D texture5,
+	out float4 oColor : COLOR 
+) 
+{
+	//Cel-shading needs the color with the original mapping
+	float3 facecolor = tex2D(colorMap,uv).xyz;
+	// quick hack to make the hatch marks the right size when sharing uv coords with the color map
+	uv *= 3;
+	// standard per-pixel lighting
+	// set up properly to be expanded to N light sources. could be a trivial addition for a production environment
+	float4 lightPos = lightPositionArr[0]-pos;
+	float3 N = normalize(normal);
+	float lightDist = length(lightPositionArr[0]-pos);
+
+	float3 EyeDir = normalize(eyepos - pos.xyz);
+	float3 LightDir = normalize(lightPos.xyz -  (pos.xyz * lightPos.w));
+	float3 HalfAngle = normalize(LightDir + EyeDir);
+
+	float NdotL = dot(LightDir, N);
+	float NdotH = dot(HalfAngle, N);
+	float4 Lit = lit(NdotL,NdotH,exponent);
+	//cg docs say using their lit function is the fastest
+
+	float4 textColour = float4(1,1,1,1);//.16*tex2D(texture0, uv) + .16*tex2D(texture1, uv) + .16*tex2D(texture2, uv) + .16*tex2D(texture3, uv) + .16*tex2D(texture4, uv) + .16*tex2D(texture5, uv);
+	// determines how quickly the light becomes not lit. falls off quickly now for more dramatic effect
+	// this should probably be a uniform in a production game environment, but that addition is trivial
+	float diffuseFalloff = min((10000.0/(lightDist*lightDist)),1.0);
+	float2 tamWeights;
+	oColor =  diffuseFalloff * (lightDiffuseArr[0] * Lit.y + lightSpecularArr[0] * Lit.z + ambient);
+	float3 HSLcolor = RGBtoHSL(oColor);
+	float brightness = HSLcolor.z;//oColor.r + oColor.g + oColor.b;
+	//brightness *= 0.3333334;
+	// do interpolation between components in the TAM
+	// this is the chief difference between our implementation and the hatching paper
+	// interpolation should be more correct as it is found per-fragment
+	// the magic numbers are calculated from the definition of the hatching levels in the TAM generator
+	if (brightness > 0.4040) {
+		if (brightness > 0.7351) {
+			if (brightness > 0.93) {
+				//everything is white
+				textColour = float4(1,1,1,1);
+				//brightness = 1.0;
+			}
+			else {
+				tamWeights = blendTAMs(0.7351, 0.93, brightness);
+				textColour = tamWeights[1] * tex2D(texture0, uv) + tamWeights[0] * float4(1,1,1,1);
+				//brightness = 0.93;
+			}
+		}
+		else { 
+			if (brightness > 0.5364) {
+				tamWeights = blendTAMs(0.5364, 0.7351, brightness);
+				textColour = tamWeights[1] * tex2D(texture1, uv) + tamWeights[0] * tex2D(texture0, uv);
+				//brightness = 0.7351;
+			}
+			else { //0.4040
+				tamWeights = blendTAMs(0.4040, 0.5364, brightness);
+				textColour = tamWeights[1] * tex2D(texture2, uv) + tamWeights[0] * tex2D(texture1, uv);
+				//brightness = 0.5364;
+			}
+		}
+	}
+	else {
+		if (brightness > 0.1060) {
+			if (brightness > 0.2053) {
+				tamWeights = blendTAMs(0.2053, 0.4040, brightness);
+				textColour = tamWeights[1] * tex2D(texture3, uv) + tamWeights[0] * tex2D(texture2, uv);
+				//brightness = 0.4040;
+			}
+			else { //0.1060
+				tamWeights = blendTAMs(0.1060, 0.2053, brightness);
+				textColour = tamWeights[1] * tex2D(texture4, uv) + tamWeights[0] * tex2D(texture3, uv);
+				//brightness = 0.2053;
+			}
+		}
+		else {
+			if (brightness > 0.0033) {
+				tamWeights = blendTAMs(0.0033, 0.1060, brightness);
+				textColour = tamWeights[1] * tex2D(texture5, uv) + tamWeights[0] * tex2D(texture4, uv);
+				//brightness = 0.1060;
+			}
+			else { //superdark!
+				tamWeights = blendTAMs(0.f, 0.0033, brightness);
+				textColour = tamWeights[1] * float4(0.05,0.05,0.05,1) + tamWeights[0] * tex2D(texture5, uv);
+				//brightness = 0.0033;
+			}
+		}
+	}
+	//brightness -= floor(brightness);
+	//brightness = 1 - brightness;
+	// drop the brightness into a simple step function
+	brightness *= 6;
+	brightness = floor(brightness+.5); // make the split at the right spot
+	brightness *= 0.166667;
+	facecolor *= oColor; //+ 0.6;
+	facecolor = RGBtoHSL(facecolor);
+	//facecolor.y *= RGBtoHSL(oColor).y;
+	// apply some caps. a last minute addition for better effect
+	brightness = max(brightness,.4);
+	facecolor.y *= brightness;
+	brightness = max(brightness,.6);
+	facecolor.z *=brightness;
+	//facecolor.y = floor(facecolor.y + .5);
+	//facecolor.y /= 3;// + brightness;
+	// make the color into a vec4
+	float4 cel_shaded_color = float4(HSLtoRGB(facecolor),1.);
+//textColour = .16*tex2D(texture0, uv) + .16*tex2D(texture1, uv) + .16*tex2D(texture2, uv) + .16*tex2D(texture3, uv) + .16*tex2D(texture4, uv) + .16*tex2D(texture5, uv);
+	// combine the cel shading and hatching
+	oColor = (cel_shaded_color + 0.1) * textColour;
+
+	//ADDED BY EUGEN - support for texture with the per pixel lighting
+	//oColor = lightDiffuse * Lit.y + lightSpecular * Lit.z + ambient) * float4(textColour, 1)).xyz;
+	//oColor =  diffuseFalloff * (lightDiffuseArr[0] * Lit.y + lightSpecularArr[0] * Lit.z + ambient) * textColour;
+ }

@@ -1,0 +1,34 @@
+fragment_program Ogre/Compositor/CelShading_FP cg
+{
+	source CelShading.cg
+	entry_point CelShading_ps
+	profiles ps_2_0 arbfp1
+}
+
+material Ogre/Compositor/CelShading
+{
+	technique
+	{
+
+		pass
+		{
+			depth_check off
+
+			vertex_program_ref Ogre/Compositor/StdQuad_Cg_vp
+			{
+			}
+
+			fragment_program_ref Ogre/Compositor/CelShading_FP
+			{
+			}
+
+			texture_unit
+			{
+				texture RT
+               	tex_coord_set 0
+				tex_address_mode clamp
+				filtering linear linear linear
+			}
+		}
+	}
+}

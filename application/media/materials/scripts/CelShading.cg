@@ -1,0 +1,19 @@
+sampler RT : register(s0);
+
+float4 CelShading_ps(float2 iTexCoord : TEXCOORD0) : COLOR
+{
+	float3 facecolor = tex2D(RT,iTexCoord).xyz;
+	facecolor += tex2D(RT,iTexCoord+float2(1./500.,0));
+	facecolor += tex2D(RT,iTexCoord+float2(0,1./500.));
+	facecolor += tex2D(RT,iTexCoord+float2(-1./500.,0));
+	facecolor += tex2D(RT,iTexCoord+float2(0,1./500.));
+	facecolor *= .2;
+	float arbitrary_const = 0.;
+	if (facecolor.r+facecolor.g+facecolor.b > .05) {
+		arbitrary_const += .05;
+	}
+	facecolor *= 2;
+	facecolor = floor(facecolor + .5);
+	facecolor *= .5;
+	return float4(facecolor+arbitrary_const,1.);
+}
